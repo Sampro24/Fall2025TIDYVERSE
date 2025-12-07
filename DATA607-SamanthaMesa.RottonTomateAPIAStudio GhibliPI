@@ -1,0 +1,73 @@
+---
+title: "TidyVerse"
+author: "Samantha M"
+date: "`r Sys.Date()`"
+output: openintro::lab_report
+---
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(openintro)
+library(httr2)
+```
+
+###Research Question: How have Rotten Tomatoes scores for Studio Ghibli films changed over time?
+
+```{r }
+req <- request("https://ghibliapi.vercel.app/films")
+resp <- req_perform(req)
+films_raw <- resp_body_json(resp, simplifyVector = TRUE)
+films <- as_tibble(films_raw) |>
+select(title, release_date, rt_score) |>
+mutate(
+release_date = as.numeric(release_date),
+rt_score = as.numeric(rt_score)
+)
+ggplot(films, aes(x = release_date, y = rt_score)) +
+geom_point(color = "steelblue", size = 3) +
+geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+labs(
+title = "Rotten Tomatoes Scores of Studio Ghibli Films Over Time",
+x = "Release Year",
+y = "Rotten Tomatoes Score"
+) +
+theme_minimal()
+### Studio Ghibli films have consistently received high Rotten Tomatoes scores over time. While there is some variation between individual films, the overall trend suggests that the studio has maintained strong critical reception across multiple decades.
+
+###Extended TidyVerse(Extending-Kalel_Cascardi)
+###Research Question:Do some Pokémon types rely heavily on a single stat, while others are more balanced across stats?
+```{r}
+pokemon_list <- request("https://pokeapi.co/api/v2/pokemon?limit=200") |> req_perform() |> resp_body_json()
+
+pokemon_df <- tibble( name = map_chr(pokemon_list$results, "name"), url = map_chr(pokemon_list$results, "url") )
+
+pokemon_details <- pokemon_df |> mutate(data = map(url, ~ request(.x) |> req_perform() |> resp_body_json()))
+
+types_df <- pokemon_details |> mutate(types = map(data, ~ map_chr(.x$types, ~ .x$type$name))) |> unnest(types)
+
+stats_df <- pokemon_details |> mutate(stats = map(data, ~ tibble( stat = map_chr(.x$stats, ~ .x$stat$name), base_stat = map_int(.x$stats, ~ .x$base_stat) ))) |> unnest(stats)
+
+joined <- stats_df |> left_join(types_df |> select(name, types), by = "name")
+
+stat_variability <- joined |>
+  group_by(types, stat) |>
+  summarise(mean_stat = mean(base_stat), .groups = "drop") |>
+  group_by(types) |>
+  summarise(
+    stat_sd = sd(mean_stat),
+    stat_range = max(mean_stat) - min(mean_stat)
+  )
+
+stat_variability |>
+  ggplot(aes(x = reorder(types, stat_sd), y = stat_sd)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Stat Specialization by Pokémon Type",
+    x = "Pokémon Type",
+    y = "Standard Deviation of Average Stats"
+  ) +
+  theme_minimal()
+
+```
+###Response: Types with higher standard deviation show greater specialization, meaning they excel in certain stats while lagging in others. Types like Dragon and Ghost appear highly specialized, whereas Normal and Fairy exhibit more balanced stat profiles. This suggests different design philosophies across type categories.
